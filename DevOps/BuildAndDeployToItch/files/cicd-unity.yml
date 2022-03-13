@@ -1,0 +1,118 @@
+name: Build, Archive Artifact and Publish to Itch.io
+
+on: 
+  workflow_dispatch: {}
+  
+env:
+  ITCH_PROJECT_NAME: <REPLACE WITH YOUR ITCH.IO PROJECT NAME>
+
+jobs:
+#-----------------------------------------------------------------------------
+# BUILD
+#-----------------------------------------------------------------------------
+  buildForAllPlatforms:
+    name: Build for ${{ matrix.targetPlatform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        targetPlatform:
+          - StandaloneOSX
+          - StandaloneWindows
+          - StandaloneWindows64
+          - StandaloneLinux64
+          - WebGL
+        unityVersion:
+          - 2020.3.30f1
+          
+    steps:
+      - name: Inject slug/short variables
+        uses: rlespinasse/github-slug-action@v3.x
+      - uses: actions/checkout@v2
+        name: Checkout Source
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - uses: actions/cache@v2
+        name: Check Cache
+        with:
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}
+          restore-keys: Library-
+
+      - uses: game-ci/unity-builder@main
+        name: Build for Platform - ${{ matrix.targetPlatform }}
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          targetPlatform: ${{ matrix.targetPlatform }}
+          unityVersion: ${{ matrix.unityVersion }}
+
+#-----------------------------------------------------------------------------
+# ARCHIVE
+#-----------------------------------------------------------------------------      
+      - uses: montudor/action-zip@v1
+        name: "Zip Builds - ${{ matrix.targetPlatform }}"
+        #if: github.event.action == 'published'
+        with:
+          args: zip -qq -r build/build-${{ matrix.targetPlatform }}.zip build/${{ matrix.platform }}
+
+      - uses: svenstaro/upload-release-action@v2
+        name: Upload build-${{ matrix.targetPlatform }}.zip to Github Release
+        #if: github.event.action == 'published'
+        with:
+          repo_token: ${{ secrets.ACCESS_TOKEN }}
+          asset_name: build-${{ matrix.targetPlatform }}.zip
+          file: build/build-${{ matrix.targetPlatform }}.zip
+          tag: ${{ github.ref }}
+          body: "Automated deployment from ${{ ENV.GITHUB_REF_SLUG }} branch"
+          #prerelease: true
+          overwrite: true        
+
+#-----------------------------------------------------------------------------
+# DEPLOY
+#-----------------------------------------------------------------------------
+      - name: Upload StandaloneOSX build to Itch.io
+        uses: josephbmanley/butler-publish-itchio-action@master
+        if: contains(matrix.targetPlatform, 'StandaloneOSX')
+        env:
+          BUTLER_CREDENTIALS: ${{ secrets.BUTLER_API_KEY }}
+          CHANNEL: osx
+          ITCH_GAME: ${{ env.ITCH_PROJECT_NAME }}
+          ITCH_USER: roasted-goblin-studios
+          PACKAGE: build/build-StandaloneOSX.zip
+          VERSION: "develop"
+      
+      - name: Upload StandaloneWindows build to Itch.io
+        uses: josephbmanley/butler-publish-itchio-action@master
+        if: contains(matrix.targetPlatform, 'StandaloneWindows')
+        env:
+          BUTLER_CREDENTIALS: ${{ secrets.BUTLER_API_KEY }}
+          CHANNEL: windows
+          ITCH_GAME: ${{ env.ITCH_PROJECT_NAME }}
+          ITCH_USER: roasted-goblin-studios
+          PACKAGE: build/build-StandaloneWindows.zip
+          VERSION: "develop"
+      
+      - name: Upload StandaloneLinux64 build to Itch.io
+        uses: josephbmanley/butler-publish-itchio-action@master
+        if: contains(matrix.targetPlatform, 'StandaloneLinux64')
+        env:
+          BUTLER_CREDENTIALS: ${{ secrets.BUTLER_API_KEY }}
+          CHANNEL: linux
+          ITCH_GAME: ${{ env.ITCH_PROJECT_NAME }}
+          ITCH_USER: roasted-goblin-studios
+          PACKAGE: build/build-StandaloneLinux64.zip
+          VERSION: "develop"
+      
+      - name: Upload WebGL build to Itch.io
+        uses: josephbmanley/butler-publish-itchio-action@master
+        if: contains(matrix.targetPlatform, 'WebGL')
+        env:
+          BUTLER_CREDENTIALS: ${{ secrets.BUTLER_API_KEY }}
+          CHANNEL: HTML5
+          ITCH_GAME: ${{ env.ITCH_PROJECT_NAME }}
+          ITCH_USER: roasted-goblin-studios
+          PACKAGE: build/build-WebGL.zip
+          VERSION: "develop"
